@@ -8,10 +8,10 @@ export default class AxesUtils {
   }
 
   // Based on the formatter function, get the label text and position
-  getLabel(labels, timelineLabels, x, i, drawnLabels = []) {
+  getLabel(labels, timescaleLabels, x, i, drawnLabels = []) {
     const w = this.w
     let rawLabel = typeof labels[i] === 'undefined' ? '' : labels[i]
-    let label
+    let label = rawLabel
 
     let xlbFormatter = w.globals.xLabelFormatter
     let customFormatter = w.config.xaxis.labels.formatter
@@ -28,7 +28,7 @@ export default class AxesUtils {
 
     const determineHighestUnit = (unit) => {
       let highestUnit = null
-      timelineLabels.forEach((t) => {
+      timescaleLabels.forEach((t) => {
         if (t.unit === 'month') {
           highestUnit = 'year'
         } else if (t.unit === 'day') {
@@ -42,10 +42,10 @@ export default class AxesUtils {
 
       return highestUnit === unit
     }
-    if (timelineLabels.length > 0) {
-      isBold = determineHighestUnit(timelineLabels[i].unit)
-      x = timelineLabels[i].position
-      label = timelineLabels[i].value
+    if (timescaleLabels.length > 0) {
+      isBold = determineHighestUnit(timescaleLabels[i].unit)
+      x = timescaleLabels[i].position
+      label = timescaleLabels[i].value
     } else {
       if (w.config.xaxis.type === 'datetime' && customFormatter === undefined) {
         label = ''
@@ -54,13 +54,15 @@ export default class AxesUtils {
 
     if (typeof label === 'undefined') label = ''
 
-    label = label.toString()
+    label = Array.isArray(label) ? label : label.toString()
 
     if (
-      label.indexOf('NaN') === 0 ||
-      label.toLowerCase().indexOf('invalid') === 0 ||
-      label.toLowerCase().indexOf('infinity') >= 0 ||
-      (drawnLabels.indexOf(label) >= 0 && !w.config.xaxis.labels.showDuplicates)
+      !Array.isArray(label) &&
+      (label.indexOf('NaN') === 0 ||
+        label.toLowerCase().indexOf('invalid') === 0 ||
+        label.toLowerCase().indexOf('infinity') >= 0 ||
+        (drawnLabels.indexOf(label) >= 0 &&
+          !w.config.xaxis.labels.showDuplicates))
     ) {
       label = ''
     }
@@ -70,6 +72,48 @@ export default class AxesUtils {
       text: label,
       isBold
     }
+  }
+
+  checkForCroppedLabels(i, label, labelsLen) {
+    const w = this.w
+    // let graphics = new Graphics(this.ctx)
+
+    // const divideBy =
+    //   w.globals.rotateXLabels || w.config.xaxis.labels.rotateAlways ? 1 : 2
+
+    if (i === 0) {
+      // check if first label is being cropped
+      //const firstTextRect = graphics.getTextRects(label.text)
+
+      if (
+        w.globals.skipFirstTimelinelabel &&
+        !w.config.xaxis.convertedCatToNumeric
+      ) {
+        label.text = ''
+      }
+    }
+
+    if (i === labelsLen - 1) {
+      // check if last label is being cropped
+      // const lastTextRect = graphics.getTextRects(label.text)
+
+      if (
+        w.globals.skipLastTimelinelabel &&
+        !w.config.xaxis.convertedCatToNumeric
+      ) {
+        label.text = ''
+      }
+    }
+
+    return label
+  }
+
+  checkForReversedLabels(i, labels) {
+    const w = this.w
+    if (w.config.yaxis[i] && w.config.yaxis[i].reversed) {
+      labels.reverse()
+    }
+    return labels
   }
 
   drawYAxisTicks(
@@ -87,7 +131,7 @@ export default class AxesUtils {
     // initial label position = 0;
     let t = w.globals.translateY
 
-    if (axisTicks.show) {
+    if (axisTicks.show && tickAmount > 0) {
       if (w.config.yaxis[realIndex].opposite === true) x = x + axisTicks.width
 
       for (let i = tickAmount; i >= 0; i--) {
@@ -96,16 +140,50 @@ export default class AxesUtils {
         if (w.globals.isBarHorizontal) {
           tY = labelsDivider * i
         }
+
+        if (w.config.chart.type === 'heatmap') {
+          tY = tY + labelsDivider / 2
+        }
         let elTick = graphics.drawLine(
           x + axisBorder.offsetX - axisTicks.width + axisTicks.offsetX,
           tY + axisTicks.offsetY,
           x + axisBorder.offsetX + axisTicks.offsetX,
           tY + axisTicks.offsetY,
-          axisBorder.color
+          axisTicks.color
         )
         elYaxis.add(elTick)
         t = t + labelsDivider
       }
     }
+  }
+
+  getCatLabelsByTickAmount() {
+    const w = this.w
+    let labels = []
+    let min = w.globals.labels[0]
+    let max = w.globals.labels[w.globals.labels.length - 1]
+    let range = max - min
+
+    let ticks = Math.round(w.globals.gridWidth / 40)
+
+    if (range < 30) {
+      ticks = range
+    }
+
+    // console.log(ticks, 'fff')
+
+    if (ticks > 5) {
+      for (let i = min; i <= max; i++) {
+        if (i % Math.floor(max / ticks) === 0) {
+          labels.push(i)
+        }
+      }
+    } else {
+      for (let i = min; i <= max; i++) {
+        labels.push(i)
+      }
+    }
+
+    return labels
   }
 }

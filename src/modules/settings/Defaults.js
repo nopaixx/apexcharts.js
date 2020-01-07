@@ -41,7 +41,10 @@ export default class Defaults {
   }
 
   sparkline(defaults) {
-    this.opts.yaxis[0].labels.show = false
+    this.opts.yaxis[0].show = false
+    this.opts.yaxis[0].title.text = ''
+    this.opts.yaxis[0].axisBorder.show = false
+    this.opts.yaxis[0].axisTicks.show = false
     this.opts.yaxis[0].floating = true
 
     const ret = {
@@ -65,6 +68,9 @@ export default class Defaults {
           enabled: false
         },
         axisBorder: {
+          show: false
+        },
+        axisTicks: {
           show: false
         }
       },
@@ -90,6 +96,9 @@ export default class Defaults {
         stacked: false,
         animations: {
           easing: 'swing'
+        },
+        zoom: {
+          enabled: false
         }
       },
       plotOptions: {
@@ -124,6 +133,7 @@ export default class Defaults {
         tooltip: {
           enabled: false
         },
+        tickPlacement: 'between',
         crosshairs: {
           width: 'barWidth',
           position: 'back',
@@ -152,7 +162,7 @@ export default class Defaults {
       },
       tooltip: {
         shared: true,
-        custom: function({ seriesIndex, dataPointIndex, w }) {
+        custom({ seriesIndex, dataPointIndex, w }) {
           const o = w.globals.seriesCandleO[seriesIndex][dataPointIndex]
           const h = w.globals.seriesCandleH[seriesIndex][dataPointIndex]
           const l = w.globals.seriesCandleL[seriesIndex][dataPointIndex]
@@ -192,6 +202,11 @@ export default class Defaults {
 
   rangeBar() {
     return {
+      chart: {
+        zoom: {
+          enabled: false
+        }
+      },
       stroke: {
         width: 0
       },
@@ -204,7 +219,7 @@ export default class Defaults {
       },
       dataLabels: {
         enabled: false,
-        formatter: function(val, { ctx, seriesIndex, dataPointIndex, w }) {
+        formatter(val, { ctx, seriesIndex, dataPointIndex, w }) {
           const start = w.globals.seriesRangeStart[seriesIndex][dataPointIndex]
           const end = w.globals.seriesRangeEnd[seriesIndex][dataPointIndex]
           return end - start
@@ -216,9 +231,19 @@ export default class Defaults {
       tooltip: {
         shared: false,
         followCursor: true,
-        custom: function({ ctx, seriesIndex, dataPointIndex, w }) {
-          const start = w.globals.seriesRangeStart[seriesIndex][dataPointIndex]
-          const end = w.globals.seriesRangeEnd[seriesIndex][dataPointIndex]
+        custom({ ctx, seriesIndex, dataPointIndex, y1, y2, w }) {
+          let start = w.globals.seriesRangeStart[seriesIndex][dataPointIndex]
+          let end = w.globals.seriesRangeEnd[seriesIndex][dataPointIndex]
+          let ylabel = w.globals.labels[dataPointIndex]
+
+          if (y1 && y2) {
+            start = y1
+            end = y2
+
+            if (w.config.series[seriesIndex].data[dataPointIndex].x) {
+              ylabel = w.config.series[seriesIndex].data[dataPointIndex].x
+            }
+          }
 
           let startVal = ''
           let endVal = ''
@@ -226,18 +251,14 @@ export default class Defaults {
           const color = w.globals.colors[seriesIndex]
           if (w.config.tooltip.x.formatter === undefined) {
             if (w.config.xaxis.type === 'datetime') {
-              var datetimeObj = new DateTime(ctx)
+              let datetimeObj = new DateTime(ctx)
               startVal = datetimeObj.formatDate(
-                new Date(start),
-                w.config.tooltip.x.format,
-                true,
-                true
+                datetimeObj.getUTCDate(start),
+                w.config.tooltip.x.format
               )
               endVal = datetimeObj.formatDate(
-                new Date(end),
-                w.config.tooltip.x.format,
-                true,
-                true
+                datetimeObj.getUTCDate(end),
+                w.config.tooltip.x.format
               )
             } else {
               startVal = start
@@ -247,8 +268,6 @@ export default class Defaults {
             startVal = w.config.tooltip.x.formatter(start)
             endVal = w.config.tooltip.x.formatter(end)
           }
-
-          const ylabel = w.globals.labels[dataPointIndex]
 
           return (
             '<div class="apexcharts-tooltip-rangebar">' +
@@ -271,6 +290,7 @@ export default class Defaults {
         }
       },
       xaxis: {
+        tickPlacement: 'between',
         tooltip: {
           enabled: false
         },
@@ -376,8 +396,7 @@ export default class Defaults {
         return val
       }
     opts.chart = opts.chart || {}
-    opts.chart.zoom =
-      opts.chart.zoom || (window.Apex.chart && window.Apex.chart.zoom) || {}
+
     const defaultFormatter = opts.xaxis.labels.formatter
     const labels =
       opts.xaxis.categories && opts.xaxis.categories.length
@@ -386,13 +405,13 @@ export default class Defaults {
 
     if (labels && labels.length) {
       opts.xaxis.labels.formatter = function(val) {
-        return defaultFormatter(labels[val - 1])
+        return defaultFormatter(labels[Math.floor(val) - 1])
       }
     }
 
     opts.xaxis.categories = []
     opts.labels = []
-    opts.chart.zoom.enabled = opts.chart.zoom.enabled || false
+    opts.xaxis.tickAmount = 'dataPoints'
 
     return opts
   }
@@ -437,7 +456,7 @@ export default class Defaults {
       },
       markers: {
         size: 6,
-        strokeWidth: 2,
+        strokeWidth: 1,
         hover: {
           sizeOffset: 2
         }
@@ -492,6 +511,9 @@ export default class Defaults {
   pie() {
     return {
       chart: {
+        zoom: {
+          enabled: false
+        },
         toolbar: {
           show: false
         }
@@ -506,7 +528,7 @@ export default class Defaults {
         }
       },
       dataLabels: {
-        formatter: function(val) {
+        formatter(val) {
           return val.toFixed(1) + '%'
         },
         style: {
@@ -545,12 +567,15 @@ export default class Defaults {
   donut() {
     return {
       chart: {
+        zoom: {
+          enabled: false
+        },
         toolbar: {
           show: false
         }
       },
       dataLabels: {
-        formatter: function(val) {
+        formatter(val) {
           return val.toFixed(1) + '%'
         },
         style: {
@@ -590,14 +615,19 @@ export default class Defaults {
   }
 
   radar() {
-    this.opts.yaxis[0].labels.style.fontSize = '13px'
-    this.opts.yaxis[0].labels.offsetY = 6
+    this.opts.yaxis[0].labels.offsetY = this.opts.yaxis[0].labels.offsetY
+      ? this.opts.yaxis[0].labels.offsetY
+      : 6
 
     return {
+      chart: {
+        zoom: {
+          enabled: false
+        }
+      },
       dataLabels: {
-        enabled: true,
+        enabled: false,
         style: {
-          colors: ['#a8a8a8'],
           fontSize: '11px'
         }
       },
@@ -621,6 +651,13 @@ export default class Defaults {
         show: false
       },
       xaxis: {
+        labels: {
+          formatter: (val) => val,
+          style: {
+            colors: ['#a8a8a8'],
+            fontSize: '11px'
+          }
+        },
         tooltip: {
           enabled: false
         },

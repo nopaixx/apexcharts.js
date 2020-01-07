@@ -30,9 +30,7 @@ export default class Markers {
         }
       }
     } else {
-      w.globals.markers.size = w.config.series.map((s) => {
-        return w.config.markers.size
-      })
+      w.globals.markers.size = w.config.series.map((s) => w.config.markers.size)
     }
   }
 
@@ -81,7 +79,7 @@ export default class Markers {
 
         if (shouldMarkerDraw) {
           if (Utils.isNumber(p.y[q])) {
-            PointClasses += ` w${(Math.random() + 1).toString(36).substring(4)}`
+            PointClasses += ` w${Utils.randomId()}`
           } else {
             PointClasses = 'apexcharts-nullpoint'
           }
@@ -151,14 +149,13 @@ export default class Markers {
       })
     }
 
-    const strokeWidth =
-      w.config.chart.type === 'bubble' ? w.config.stroke.width : m.strokeWidth
-
     return {
       pSize,
       pRadius: m.radius,
       pWidth:
-        strokeWidth instanceof Array ? strokeWidth[seriesIndex] : strokeWidth,
+        m.strokeWidth instanceof Array
+          ? m.strokeWidth[seriesIndex]
+          : m.strokeWidth,
       pointStrokeColor: pStyle.pointStrokeColor,
       pointFillColor: pStyle.pointFillColor,
       shape: m.shape instanceof Array ? m.shape[seriesIndex] : m.shape,
@@ -167,6 +164,10 @@ export default class Markers {
         m.strokeOpacity instanceof Array
           ? m.strokeOpacity[seriesIndex]
           : m.strokeOpacity,
+      pointStrokeDashArray:
+        m.strokeDashArray instanceof Array
+          ? m.strokeDashArray[seriesIndex]
+          : m.strokeDashArray,
       pointFillOpacity:
         m.fillOpacity instanceof Array
           ? m.fillOpacity[seriesIndex]

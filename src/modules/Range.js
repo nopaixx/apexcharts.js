@@ -1,4 +1,5 @@
 import Utils from '../utils/Utils'
+import DateTime from '../utils/DateTime'
 import Scales from './Scales'
 
 /**
@@ -27,6 +28,7 @@ class Range {
     highestY = -Number.MAX_VALUE,
     len = null
   ) {
+    const cnf = this.w.config
     const gl = this.w.globals
     let maxY = -Number.MAX_VALUE
     let minY = Number.MIN_VALUE
@@ -34,12 +36,11 @@ class Range {
     if (len === null) {
       len = startingIndex + 1
     }
-
     const series = gl.series
     let seriesMin = series
     let seriesMax = series
 
-    if (this.w.config.chart.type === 'candlestick') {
+    if (cnf.chart.type === 'candlestick') {
       seriesMin = gl.seriesCandleL
       seriesMax = gl.seriesCandleH
     } else if (gl.isRangeData) {
@@ -79,6 +80,14 @@ class Range {
           gl.hasNullValues = true
         }
       }
+    }
+
+    if (
+      cnf.chart.type === 'rangeBar' &&
+      gl.seriesRangeStart.length &&
+      cnf.xaxis.type === 'datetime'
+    ) {
+      minY = lowestY
     }
 
     return {
@@ -172,10 +181,13 @@ class Range {
         }
 
         gl.minY = lowestYInAllSeries - (diff * 5) / 100
-        // if (lowestYInAllSeries > 0 && gl.minY < 0) {
+
         /* fix https://github.com/apexcharts/apexcharts.js/issues/614 */
-        //  gl.minY = 0
-        // }
+        /* fix https://github.com/apexcharts/apexcharts.js/issues/968 */
+        if (lowestYInAllSeries > 0 && gl.minY < 0) {
+          gl.minY = 0
+        }
+
         /* fix https://github.com/apexcharts/apexcharts.js/issues/426 */
         gl.maxY = gl.maxY + (diff * 5) / 100
       }
@@ -257,9 +269,9 @@ class Range {
           for (let j = 0; j < gl.labels[i].length; j++) {
             if (gl.labels[i][j] !== null && Utils.isNumber(gl.labels[i][j])) {
               gl.maxX = Math.max(gl.maxX, gl.labels[i][j])
-              gl.initialmaxX = Math.max(gl.maxX, gl.labels[i][j])
+              gl.initialMaxX = Math.max(gl.maxX, gl.labels[i][j])
               gl.minX = Math.min(gl.minX, gl.labels[i][j])
-              gl.initialminX = Math.min(gl.minX, gl.labels[i][j])
+              gl.initialMinX = Math.min(gl.minX, gl.labels[i][j])
             }
           }
         }
@@ -269,47 +281,44 @@ class Range {
     if (gl.noLabelsProvided) {
       if (cnf.xaxis.categories.length === 0) {
         gl.maxX = gl.labels[gl.labels.length - 1]
-        gl.initialmaxX = gl.labels[gl.labels.length - 1]
+        gl.initialMaxX = gl.labels[gl.labels.length - 1]
         gl.minX = 1
-        gl.initialminX = 1
+        gl.initialMinX = 1
       }
     }
 
     // bar chart specific
     // for numeric xaxis, we need to adjust some padding left and right for bar charts
-    if (
-      gl.comboChartsHasBars ||
-      cnf.chart.type === 'candlestick' ||
-      (cnf.chart.type === 'bar' && gl.isXNumeric)
-    ) {
-      if (cnf.xaxis.type !== 'category' || gl.isXNumeric) {
-        const t =
-          (gl.svgWidth / gl.dataPoints) *
-          (Math.abs(gl.maxX - gl.minX) / gl.svgWidth)
+    // if (
+    //   gl.comboChartsHasBars ||
+    //   cnf.chart.type === 'candlestick' ||
+    //   (cnf.chart.type === 'bar' && gl.isXNumeric)
+    // ) {
+    //   if (cnf.xaxis.type !== 'category' || gl.isXNumeric) {
+    //     const t =
+    //       (gl.svgWidth / gl.dataPoints) *
+    //       (Math.abs(gl.maxX - gl.minX) / gl.svgWidth)
 
-        // some padding to the left to prevent cropping of the bars
-        const minX = gl.minX - t / 2
-        gl.minX = minX
-        gl.initialminX = minX
+    //     // some padding to the left to prevent cropping of the bars
+    //     const minX = gl.minX - t / 2
+    //     gl.minX = minX
+    //     gl.initialminX = minX
 
-        // some padding to the right to prevent cropping of the bars
-        const maxX = gl.maxX + t / ((gl.series.length + 1) / gl.series.length)
-        gl.maxX = maxX
-        gl.initialmaxX = maxX
-      }
-    }
+    //     // some padding to the right to prevent cropping of the bars
+    //     const maxX = gl.maxX + t / ((gl.series.length + 1) / gl.series.length)
+    //     gl.maxX = maxX
+    //     gl.initialmaxX = maxX
+    //   }
+    // }
 
-    if (
-      (gl.isXNumeric || gl.noLabelsProvided) &&
-      (!cnf.xaxis.convertedCatToNumeric || gl.dataFormatXNumeric)
-    ) {
+    if (gl.isXNumeric || gl.noLabelsProvided || gl.dataFormatXNumeric) {
       let ticks
 
       if (cnf.xaxis.tickAmount === undefined) {
         ticks = Math.round(gl.svgWidth / 150)
 
-        // no labels provided and total number of dataPoints is less than 20
-        if (cnf.xaxis.type === 'numeric' && gl.dataPoints < 20) {
+        // no labels provided and total number of dataPoints is less than 30
+        if (cnf.xaxis.type === 'numeric' && gl.dataPoints < 30) {
           ticks = gl.dataPoints - 1
         }
 
@@ -319,9 +328,13 @@ class Range {
         }
       } else if (cnf.xaxis.tickAmount === 'dataPoints') {
         ticks = gl.series[gl.maxValsInArrayIndex].length - 1
+        if (gl.isXNumeric) {
+          ticks = gl.maxX - gl.minX - 1
+        }
       } else {
         ticks = cnf.xaxis.tickAmount
       }
+      gl.xTickAmount = ticks
 
       // override all min/max values by user defined values (x axis)
       if (cnf.xaxis.max !== undefined && typeof cnf.xaxis.max === 'number') {
@@ -337,7 +350,19 @@ class Range {
       }
 
       if (gl.minX !== Number.MAX_VALUE && gl.maxX !== -Number.MAX_VALUE) {
-        gl.xAxisScale = this.scales.linearScale(gl.minX, gl.maxX, ticks)
+        if (cnf.xaxis.convertedCatToNumeric) {
+          let catScale = []
+          for (let i = gl.minX - 1; i < gl.maxX; i++) {
+            catScale.push(i + 1)
+          }
+          gl.xAxisScale = {
+            result: catScale,
+            niceMin: catScale[0],
+            niceMax: catScale[catScale.length - 1]
+          }
+        } else {
+          gl.xAxisScale = this.scales.linearScale(gl.minX, gl.maxX, ticks)
+        }
       } else {
         gl.xAxisScale = this.scales.linearScale(1, ticks, ticks)
         if (gl.noLabelsProvided && gl.labels.length > 0) {
@@ -358,14 +383,16 @@ class Range {
     }
 
     if (gl.minX === gl.maxX) {
+      let datetimeObj = new DateTime(this.ctx)
+
       // single dataPoint
       if (cnf.xaxis.type === 'datetime') {
-        const newMinX = new Date(gl.minX)
-        newMinX.setDate(newMinX.getDate() - 2)
+        const newMinX = datetimeObj.getUTCDate(gl.minX)
+        newMinX.setUTCDate(newMinX.getDate() - 2)
         gl.minX = new Date(newMinX).getTime()
 
-        const newMaxX = new Date(gl.maxX)
-        newMaxX.setDate(newMaxX.getDate() + 2)
+        const newMaxX = datetimeObj.getUTCDate(gl.maxX)
+        newMaxX.setUTCDate(newMaxX.getDate() + 2)
         gl.maxX = new Date(newMaxX).getTime()
       } else if (
         cnf.xaxis.type === 'numeric' ||
@@ -389,11 +416,16 @@ class Range {
           )
         }
 
-        sX.sort()
-        sX.forEach((s, j) => {
+        // fix #983 (clone the array to avoid side effects)
+        const seriesX = sX.slice()
+        seriesX.sort((a, b) => a - b)
+
+        seriesX.forEach((s, j) => {
           if (j > 0) {
             let xDiff = s - gl.seriesX[i][j - 1]
-            gl.minXDiff = Math.min(xDiff, gl.minXDiff)
+            if (xDiff > 0) {
+              gl.minXDiff = Math.min(xDiff, gl.minXDiff)
+            }
           }
         })
       })

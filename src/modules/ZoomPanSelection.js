@@ -41,7 +41,7 @@ export default class ZoomPanSelection extends Toolbar {
 
   init({ xyRatios }) {
     let w = this.w
-    var me = this
+    let me = this
 
     this.xyRatios = xyRatios
 
@@ -78,7 +78,7 @@ export default class ZoomPanSelection extends Toolbar {
     this.preselectedSelection()
 
     this.hoverArea = w.globals.dom.baseEl.querySelector(w.globals.chartClass)
-    this.hoverArea.classList.add('zoomable')
+    this.hoverArea.classList.add('apexcharts-zoomable')
 
     this.eventList.forEach((event) => {
       this.hoverArea.addEventListener(
@@ -293,6 +293,7 @@ export default class ZoomPanSelection extends Toolbar {
       // change styles based on zoom or selection
       // zoom is Enabled and user has dragged, so draw blue rect
       if (w.globals.zoomEnabled && this.dragged) {
+        if (width < 0) width = 1 // fixes apexcharts.js#1168
         zoomRect.attr({
           x,
           y,
@@ -484,15 +485,10 @@ export default class ZoomPanSelection extends Toolbar {
 
     w.config.yaxis.forEach((yaxe, index) => {
       yHighestValue.push(
-        Math.floor(
-          w.globals.yAxisScale[index].niceMax -
-            xyRatios.yRatio[index] * me.startY
-        )
+        w.globals.yAxisScale[index].niceMax - xyRatios.yRatio[index] * me.startY
       )
       yLowestValue.push(
-        Math.floor(
-          w.globals.yAxisScale[index].niceMax - xyRatios.yRatio[index] * me.endY
-        )
+        w.globals.yAxisScale[index].niceMax - xyRatios.yRatio[index] * me.endY
       )
     })
 
@@ -511,6 +507,19 @@ export default class ZoomPanSelection extends Toolbar {
           w.globals.lastYAxis = Utils.clone(w.config.yaxis)
         }
 
+        if (w.config.xaxis.convertedCatToNumeric) {
+          xLowestValue = Math.floor(xLowestValue)
+          xHighestValue = Math.floor(xHighestValue)
+
+          if (xLowestValue < 1) {
+            xLowestValue = 1
+            xHighestValue = w.globals.dataPoints
+          }
+
+          if (xHighestValue - xLowestValue < 2) {
+            xHighestValue = xLowestValue + 1
+          }
+        }
         let xaxis = {
           min: xLowestValue,
           max: xHighestValue
@@ -623,6 +632,11 @@ export default class ZoomPanSelection extends Toolbar {
   panScrolled(moveDirection, xLowestValue, xHighestValue) {
     const w = this.w
 
+    if (w.config.xaxis.convertedCatToNumeric) {
+      // TODO: currently panning in categories is not working correctly
+      return
+    }
+
     const xyRatios = this.xyRatios
     let yaxis = Utils.clone(w.globals.initialConfig.yaxis)
 
@@ -639,8 +653,8 @@ export default class ZoomPanSelection extends Toolbar {
     }
 
     if (
-      xLowestValue < w.globals.initialminX ||
-      xHighestValue > w.globals.initialmaxX
+      xLowestValue < w.globals.initialMinX ||
+      xHighestValue > w.globals.initialMaxX
     ) {
       xLowestValue = w.globals.minX
       xHighestValue = w.globals.maxX

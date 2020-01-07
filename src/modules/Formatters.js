@@ -23,10 +23,8 @@ class Formatters {
         if (w.config.tooltip.x.formatter === undefined) {
           let datetimeObj = new DateTime(this.ctx)
           return datetimeObj.formatDate(
-            new Date(val),
-            w.config.tooltip.x.format,
-            true,
-            true
+            datetimeObj.getUTCDate(val),
+            w.config.tooltip.x.format
           )
         }
       }
@@ -38,16 +36,25 @@ class Formatters {
   setLabelFormatters() {
     let w = this.w
 
+    const defaultFormatter = (val) => {
+      if (Array.isArray(val)) {
+        return val.map((v) => {
+          return v
+        })
+      } else {
+        return val
+      }
+    }
     w.globals.xLabelFormatter = function(val) {
-      return val
+      return defaultFormatter(val)
     }
 
     w.globals.xaxisTooltipFormatter = function(val) {
-      return val
+      return defaultFormatter(val)
     }
 
     w.globals.ttKeyFormatter = function(val) {
-      return val
+      return defaultFormatter(val)
     }
 
     w.globals.ttZFormatter = function(val) {
@@ -55,7 +62,7 @@ class Formatters {
     }
 
     w.globals.legendFormatter = function(val) {
-      return val
+      return defaultFormatter(val)
     }
 
     // formatter function will always overwrite format property
@@ -65,7 +72,11 @@ class Formatters {
       w.globals.xLabelFormatter = function(val) {
         if (Utils.isNumber(val)) {
           // numeric xaxis may have smaller range, so defaulting to 1 decimal
-          if (w.config.xaxis.type === 'numeric' && w.globals.dataPoints < 50) {
+          if (
+            !w.config.xaxis.convertedCatToNumeric &&
+            w.config.xaxis.type === 'numeric' &&
+            w.globals.dataPoints < 50
+          ) {
             return val.toFixed(1)
           }
           if (w.globals.isBarHorizontal) {
@@ -115,20 +126,30 @@ class Formatters {
         w.globals.yLabelFormatters[i] = function(val) {
           if (!w.globals.xyCharts) return val
 
-          if (Utils.isNumber(val)) {
-            if (w.globals.yValueDecimal !== 0) {
-              return val.toFixed(
-                yaxe.decimalsInFloat !== undefined
-                  ? yaxe.decimalsInFloat
-                  : w.globals.yValueDecimal
-              )
-            } else if (w.globals.maxYArr[i] - w.globals.minYArr[i] < 10) {
-              return val.toFixed(1)
-            } else {
-              return val.toFixed(0)
+          const vf = (v) => {
+            if (Utils.isNumber(v)) {
+              if (w.globals.yValueDecimal !== 0) {
+                v = v.toFixed(
+                  yaxe.decimalsInFloat !== undefined
+                    ? yaxe.decimalsInFloat
+                    : w.globals.yValueDecimal
+                )
+              } else if (w.globals.maxYArr[i] - w.globals.minYArr[i] < 10) {
+                v = v.toFixed(1)
+              } else {
+                v = v.toFixed(0)
+              }
             }
+            return v
           }
-          return val
+
+          if (Array.isArray(val)) {
+            return val.map((v) => {
+              return vf(v)
+            })
+          } else {
+            return vf(val)
+          }
         }
       }
     })
@@ -142,9 +163,10 @@ class Formatters {
       w.globals.yAxisScale[0].result = w.globals.seriesNames.slice()
 
       //  get the longest string from the labels array and also apply label formatter to it
-      let longest = w.globals.seriesNames.reduce(function(a, b) {
-        return a.length > b.length ? a : b
-      }, 0)
+      let longest = w.globals.seriesNames.reduce(
+        (a, b) => (a.length > b.length ? a : b),
+        0
+      )
       w.globals.yAxisScale[0].niceMax = longest
       w.globals.yAxisScale[0].niceMin = longest
     }

@@ -15,9 +15,13 @@ export default class Dimensions {
     this.w = ctx.w
     this.lgRect = {}
     this.yAxisWidth = 0
+    this.yAxisWidthLeft = 0
+    this.yAxisWidthRight = 0
     this.xAxisHeight = 0
     this.isSparkline = this.w.config.chart.sparkline.enabled
 
+    this.lgWidthForSideLegends = 0
+    this.gridPad = this.w.config.grid.padding
     this.xPadRight = 0
     this.xPadLeft = 0
   }
@@ -43,25 +47,32 @@ export default class Dimensions {
     this.titleSubtitleOffset()
 
     // after calculating everything, apply padding set by user
-    gl.gridHeight =
-      gl.gridHeight - w.config.grid.padding.top - w.config.grid.padding.bottom
+    gl.gridHeight = gl.gridHeight - this.gridPad.top - this.gridPad.bottom
 
     gl.gridWidth =
       gl.gridWidth -
-      w.config.grid.padding.left -
-      w.config.grid.padding.right -
+      this.gridPad.left -
+      this.gridPad.right -
       this.xPadRight -
       this.xPadLeft
 
-    gl.translateX = gl.translateX + w.config.grid.padding.left + this.xPadLeft
-    gl.translateY = gl.translateY + w.config.grid.padding.top
+    // Below code is for automatically padding columns in zoomable charts.
+    // Causes more issues, hence commented for now
+    // let barWidth = this.paddingForColumnsInNumericAxis(gl.gridWidth)
+
+    gl.gridWidth = gl.gridWidth //- barWidth * 2
+
+    gl.translateX = gl.translateX + this.gridPad.left + this.xPadLeft //+ barWidth
+    gl.translateY = gl.translateY + this.gridPad.top
+
+    // gl.padHorizontal = 0 //this.xPadLeft
   }
 
   conditionalChecksForAxisCoords(xaxisLabelCoords, xtitleCoords) {
     const w = this.w
     this.xAxisHeight =
       (xaxisLabelCoords.height + xtitleCoords.height) *
-        w.globals.LINE_HEIGHT_RATIO +
+        (w.globals.isMultiLineX ? 1.2 : w.globals.LINE_HEIGHT_RATIO) +
       15
 
     this.xAxisWidth = xaxisLabelCoords.width
@@ -84,13 +95,6 @@ export default class Dimensions {
       this.xAxisHeight = 0
     }
 
-    if (!w.globals.isBarHorizontal) {
-      this.yAxisWidth = this.getTotalYAxisWidth()
-    } else {
-      this.yAxisWidth =
-        w.globals.yLabelsCoords[0].width + w.globals.yTitleCoords[0].width + 15
-    }
-
     let minYAxisWidth = 0
     let maxYAxisWidth = 0
     w.config.yaxis.forEach((y) => {
@@ -110,10 +114,7 @@ export default class Dimensions {
     let gl = w.globals
 
     let yaxisLabelCoords = this.getyAxisLabelsCoords()
-    let xaxisLabelCoords = this.getxAxisLabelsCoords()
-
     let yTitleCoords = this.getyAxisTitleCoords()
-    let xtitleCoords = this.getxAxisTitleCoords()
 
     w.globals.yLabelsCoords = []
     w.globals.yTitleCoords = []
@@ -129,6 +130,11 @@ export default class Dimensions {
       })
     })
 
+    this.yAxisWidth = this.getTotalYAxisWidth()
+
+    let xaxisLabelCoords = this.getxAxisLabelsCoords()
+    let xtitleCoords = this.getxAxisTitleCoords()
+
     this.conditionalChecksForAxisCoords(xaxisLabelCoords, xtitleCoords)
 
     gl.translateXAxisY = w.globals.rotateXLabels ? this.xAxisHeight / 8 : -4
@@ -142,7 +148,7 @@ export default class Dimensions {
     if (w.globals.isBarHorizontal) {
       gl.rotateXLabels = false
       gl.translateXAxisY =
-        -1 * (parseInt(w.config.xaxis.labels.style.fontSize) / 1.5)
+        -1 * (parseInt(w.config.xaxis.labels.style.fontSize, 10) / 1.5)
     }
 
     gl.translateXAxisY = gl.translateXAxisY + w.config.xaxis.labels.offsetY
@@ -154,9 +160,9 @@ export default class Dimensions {
     gl.xAxisHeight = this.xAxisHeight
     let translateY = 10
 
-    if (!w.config.grid.show || w.config.chart.type === 'radar') {
+    if (w.config.chart.type === 'radar' || this.isSparkline) {
       yAxisWidth = 0
-      xAxisHeight = 35
+      xAxisHeight = gl.goldenPadding
     }
 
     if (this.isSparkline) {
@@ -171,26 +177,23 @@ export default class Dimensions {
 
     this.additionalPaddingXLabels(xaxisLabelCoords)
 
+    const legendTopBottom = () => {
+      gl.translateX = yAxisWidth
+      gl.gridHeight =
+        gl.svgHeight -
+        lgRect.height -
+        xAxisHeight -
+        (!this.isSparkline ? (w.globals.rotateXLabels ? 10 : 15) : 0)
+      gl.gridWidth = gl.svgWidth - yAxisWidth
+    }
     switch (w.config.legend.position) {
       case 'bottom':
         gl.translateY = translateY
-        gl.translateX = yAxisWidth
-        gl.gridHeight =
-          gl.svgHeight -
-          lgRect.height -
-          xAxisHeight -
-          (!this.isSparkline ? (w.globals.rotateXLabels ? 10 : 15) : 0)
-        gl.gridWidth = gl.svgWidth - yAxisWidth
+        legendTopBottom()
         break
       case 'top':
         gl.translateY = lgRect.height + translateY
-        gl.translateX = yAxisWidth
-        gl.gridHeight =
-          gl.svgHeight -
-          lgRect.height -
-          xAxisHeight -
-          (!this.isSparkline ? (w.globals.rotateXLabels ? 10 : 15) : 0)
-        gl.gridWidth = gl.svgWidth - yAxisWidth
+        legendTopBottom()
         break
       case 'left':
         gl.translateY = translateY
@@ -218,25 +221,23 @@ export default class Dimensions {
   setGridCoordsForNonAxisCharts(lgRect) {
     let w = this.w
     let gl = w.globals
+    let cnf = w.config
     let xPad = 0
 
     if (w.config.legend.show && !w.config.legend.floating) {
       xPad = 20
     }
 
-    let offY = 10
-    let offX = 0
+    const type =
+      cnf.chart.type === 'pie' || cnf.chart.type === 'donut'
+        ? 'pie'
+        : 'radialBar'
 
-    if (w.config.chart.type === 'pie' || w.config.chart.type === 'donut') {
-      offY = offY + w.config.plotOptions.pie.offsetY
-      offX = offX + w.config.plotOptions.pie.offsetX
-    } else if (w.config.chart.type === 'radialBar') {
-      offY = offY + w.config.plotOptions.radialBar.offsetY
-      offX = offX + w.config.plotOptions.radialBar.offsetX
-    }
+    let offY = 10 + cnf.plotOptions[type].offsetY
+    let offX = cnf.plotOptions[type].offsetX
 
-    if (!w.config.legend.show) {
-      gl.gridHeight = gl.svgHeight - 35
+    if (!cnf.legend.show || cnf.legend.floating) {
+      gl.gridHeight = gl.svgHeight - gl.goldenPadding
       gl.gridWidth = gl.gridHeight
 
       gl.translateY = offY - 10
@@ -245,34 +246,32 @@ export default class Dimensions {
       return
     }
 
-    switch (w.config.legend.position) {
+    switch (cnf.legend.position) {
       case 'bottom':
-        gl.gridHeight = gl.svgHeight - lgRect.height - 35
+        gl.gridHeight = gl.svgHeight - lgRect.height - gl.goldenPadding
         gl.gridWidth = gl.gridHeight
-
         gl.translateY = offY - 20
         gl.translateX = offX + (gl.svgWidth - gl.gridWidth) / 2
         break
       case 'top':
-        gl.gridHeight = gl.svgHeight - lgRect.height - 35
+        gl.gridHeight = gl.svgHeight - lgRect.height - gl.goldenPadding
         gl.gridWidth = gl.gridHeight
-
         gl.translateY = lgRect.height + offY + 10
         gl.translateX = offX + (gl.svgWidth - gl.gridWidth) / 2
         break
       case 'left':
         gl.gridWidth = gl.svgWidth - lgRect.width - xPad
-        gl.gridHeight = gl.gridWidth
+        gl.gridHeight =
+          cnf.chart.height !== 'auto' ? gl.svgHeight : gl.gridWidth
         gl.translateY = offY
         gl.translateX = offX + lgRect.width + xPad
-
         break
       case 'right':
         gl.gridWidth = gl.svgWidth - lgRect.width - xPad - 5
-        gl.gridHeight = gl.gridWidth
+        gl.gridHeight =
+          cnf.chart.height !== 'auto' ? gl.svgHeight : gl.gridWidth
         gl.translateY = offY
         gl.translateX = offX + 10
-
         break
       default:
         throw new Error('Legend position not supported')
@@ -291,85 +290,155 @@ export default class Dimensions {
           w.globals.translateX =
             w.globals.translateX -
             (yaxisLabelCoords[index].width + yTitleCoords[index].width) -
-            parseInt(w.config.yaxis[index].labels.style.fontSize) / 1.2 -
+            parseInt(w.config.yaxis[index].labels.style.fontSize, 10) / 1.2 -
             12
         }
       }
     })
   }
 
-  // Sometimes, the last labels gets cropped in category/numeric xaxis.
-  // Hence, we add some additional padding based on the label length to avoid the last label being cropped.
-  // NOTE: datetime x-axis won't have any effect with this as we don't know the label length there due to many constraints.
+  // paddingForColumnsInNumericAxis(gridWidth) {
+  //   const w = this.w
+
+  //   const type = w.config.chart.type
+  //   // const gridWidth =
+  //   //   w.globals.svgWidth -
+  //   //   this.lgWidthForSideLegends -
+  //   //   this.yAxisWidth -
+  //   //   this.gridPad.right -
+  //   //   this.gridPad.left -
+  //   //   60
+
+  //   let barWidth = 0
+  //   let seriesLen =
+  //     type === 'bar' || type === 'rangeBar' ? w.config.series.length : 1
+
+  //   if (w.globals.comboBarCount > 0) {
+  //     seriesLen = w.globals.comboBarCount
+  //   }
+  //   w.globals.collapsedSeries.forEach((c) => {
+  //     if (c.type === 'bar' || c.type === 'rangeBar') {
+  //       seriesLen = seriesLen - 1
+  //     }
+  //   })
+  //   if (w.config.chart.stacked) {
+  //     seriesLen = 1
+  //   }
+
+  //   const hasBar =
+  //     type === 'bar' || type === 'rangeBar' || w.globals.comboBarCount > 0
+
+  //   if (
+  //     hasBar &&
+  //     w.globals.isXNumeric &&
+  //     !w.globals.isBarHorizontal &&
+  //     seriesLen > 0
+  //   ) {
+  //     let xRatio = 0
+  //     let xRange = Math.abs(w.globals.initialMaxX - w.globals.initialMinX)
+
+  //     xRatio = xRange / gridWidth
+
+  //     let xDivision
+  //     // max barwidth should be equal to minXDiff to avoid overlap
+  //     if (w.globals.minXDiff && w.globals.minXDiff / xRatio > 0) {
+  //       xDivision = w.globals.minXDiff / xRatio
+  //     }
+
+  //     // barWidth = xDivision / seriesLen
+
+  //     barWidth =
+  //       ((xDivision / seriesLen) *
+  //         parseInt(w.config.plotOptions.bar.columnWidth, 10)) /
+  //       100
+
+  //     if (barWidth < 1) {
+  //       barWidth = 1
+  //     }
+
+  //     w.globals.barPadForNumericAxis = barWidth
+  //   }
+  //   return barWidth
+  // }
+
+  // In certain cases, the last labels gets cropped in xaxis.
+  // Hence, we add some additional padding based on the label length to avoid the last label being cropped or we don't draw it at all
   additionalPaddingXLabels(xaxisLabelCoords) {
     const w = this.w
+    const gl = w.globals
+    const cnf = w.config
+    const xtype = cnf.xaxis.type
+    const lbWidth = xaxisLabelCoords.width
 
-    if (
-      (w.config.xaxis.type === 'category' && w.globals.isBarHorizontal) ||
-      w.config.xaxis.type === 'numeric' ||
-      w.config.xaxis.type === 'datetime'
-    ) {
-      const rightPad = (labels) => {
-        if (this.timescaleLabels) {
-          // for timeline labels, we take the last label and check if it exceeds gridWidth
-          const lastTimescaleLabel = this.timescaleLabels[
-            this.timescaleLabels.length - 1
-          ]
-          const labelPosition = lastTimescaleLabel.position + labels.width
-          if (labelPosition > w.globals.gridWidth) {
-            w.globals.skipLastTimelinelabel = true
-          } else {
-            // we have to make it false again in case of zooming/panning
-            w.globals.skipLastTimelinelabel = false
-          }
-        } else if (w.config.xaxis.type === 'datetime') {
-          if (w.config.grid.padding.right < labels.width) {
-            w.globals.skipLastTimelinelabel = true
-          }
-        } else if (w.config.xaxis.type !== 'datetime') {
-          if (w.config.grid.padding.right < labels.width) {
-            this.xPadRight = labels.width / 2 + 1
-          }
+    gl.skipLastTimelinelabel = false
+    gl.skipFirstTimelinelabel = false
+    const isBarOpposite =
+      w.config.yaxis[0].opposite && w.globals.isBarHorizontal
+
+    const isCollapsed = (i) => gl.collapsedSeriesIndices.indexOf(i) !== -1
+
+    const rightPad = (yaxe) => {
+      if (this.timescaleLabels && this.timescaleLabels.length) {
+        // for timeline labels, we take the last label and check if it exceeds gridWidth
+        const firstimescaleLabel = this.timescaleLabels[0]
+        const lastTimescaleLabel = this.timescaleLabels[
+          this.timescaleLabels.length - 1
+        ]
+
+        const lastLabelPosition =
+          lastTimescaleLabel.position + lbWidth / 1.75 + this.yAxisWidthRight
+
+        const firstLabelPosition =
+          firstimescaleLabel.position -
+          lbWidth / 1.75 +
+          (yaxe.opposite ? 0 : this.yAxisWidthLeft)
+
+        if (lastLabelPosition > gl.gridWidth) {
+          gl.skipLastTimelinelabel = true
+        }
+        if (firstLabelPosition < 0) {
+          gl.skipFirstTimelinelabel = true
+        }
+      } else if (xtype === 'datetime') {
+        // If user has enabled DateTime, but uses own's formatter
+        if (this.gridPad.right < lbWidth) {
+          gl.skipLastTimelinelabel = true
+        }
+      } else if (xtype !== 'datetime' && !cnf.xaxis.convertedCatToNumeric) {
+        if (
+          this.gridPad.right < lbWidth / 2 - this.yAxisWidthRight &&
+          !gl.rotateXLabels
+        ) {
+          this.xPadRight = lbWidth / 2 + 1
         }
       }
-
-      const leftPad = (labels) => {
-        if (w.config.grid.padding.left < labels.width) {
-          this.xPadLeft = labels.width / 2 + 1
-        }
-      }
-
-      const isXNumeric = w.globals.isXNumeric
-
-      w.config.yaxis.forEach((yaxe, i) => {
-        let shouldPad =
-          !yaxe.show ||
-          yaxe.floating ||
-          w.globals.collapsedSeriesIndices.indexOf(i) !== -1 ||
-          isXNumeric ||
-          (yaxe.opposite && w.globals.isBarHorizontal)
-
-        if (shouldPad) {
-          if (
-            (isXNumeric &&
-              w.globals.isMultipleYAxis &&
-              w.globals.collapsedSeriesIndices.indexOf(i) !== -1) ||
-            (w.globals.isBarHorizontal && yaxe.opposite)
-          ) {
-            leftPad(xaxisLabelCoords)
-          }
-
-          if (
-            (!w.globals.isBarHorizontal &&
-              yaxe.opposite &&
-              w.globals.collapsedSeriesIndices.indexOf(i) !== -1) ||
-            (isXNumeric && !w.globals.isMultipleYAxis)
-          ) {
-            rightPad(xaxisLabelCoords)
-          }
-        }
-      })
     }
+
+    const padYAxe = (yaxe, i) => {
+      if (isCollapsed(i)) return
+
+      if (xtype !== 'datetime') {
+        if (
+          this.gridPad.left < lbWidth / 2 - this.yAxisWidthLeft &&
+          !gl.rotateXLabels
+        ) {
+          this.xPadLeft = lbWidth / 2 + 1
+        }
+      }
+
+      rightPad(yaxe)
+    }
+
+    cnf.yaxis.forEach((yaxe, i) => {
+      if (isBarOpposite) {
+        if (this.gridPad.left < lbWidth) {
+          this.xPadLeft = lbWidth / 2 + 1
+        }
+        this.xPadRight = lbWidth / 2 + 1
+      } else {
+        padYAxe(yaxe, i)
+      }
+    })
   }
 
   titleSubtitleOffset() {
@@ -377,25 +446,26 @@ export default class Dimensions {
     const gl = w.globals
     let gridShrinkOffset = this.isSparkline || !w.globals.axisCharts ? 0 : 10
 
-    if (w.config.title.text !== undefined) {
-      gridShrinkOffset += w.config.title.margin
-    } else {
-      gridShrinkOffset += this.isSparkline || !w.globals.axisCharts ? 0 : 5
-    }
+    const titleSubtitle = ['title', 'subtitle']
 
-    if (w.config.subtitle.text !== undefined) {
-      gridShrinkOffset += w.config.subtitle.margin
-    } else {
-      gridShrinkOffset += this.isSparkline || !w.globals.axisCharts ? 0 : 5
-    }
+    titleSubtitle.forEach((t) => {
+      if (w.config[t].text !== undefined) {
+        gridShrinkOffset += w.config[t].margin
+      } else {
+        gridShrinkOffset += this.isSparkline || !w.globals.axisCharts ? 0 : 5
+      }
+    })
+
+    const nonAxisOrMultiSeriesCharts =
+      w.config.series.length > 1 ||
+      !w.globals.axisCharts ||
+      w.config.legend.showForSingleSeries
 
     if (
       w.config.legend.show &&
       w.config.legend.position === 'bottom' &&
       !w.config.legend.floating &&
-      (w.config.series.length > 1 ||
-        !w.globals.axisCharts ||
-        w.config.legend.showForSingleSeries)
+      nonAxisOrMultiSeriesCharts
     ) {
       gridShrinkOffset += 10
     }
@@ -419,37 +489,49 @@ export default class Dimensions {
   getTotalYAxisWidth() {
     let w = this.w
     let yAxisWidth = 0
-    let padding = 10
+    let yAxisWidthLeft = 0
+    let yAxisWidthRight = 0
+    let padding = w.globals.yAxisScale.length > 1 ? 10 : 0
 
     const isHiddenYAxis = function(index) {
       return w.globals.ignoreYAxisIndexes.indexOf(index) > -1
     }
-    w.globals.yLabelsCoords.map((yLabelCoord, index) => {
+
+    const padForLabelTitle = (coord, index) => {
       let floating = w.config.yaxis[index].floating
-      if (yLabelCoord.width > 0 && !floating) {
-        yAxisWidth = yAxisWidth + yLabelCoord.width + padding
+      let width = 0
+
+      if (coord.width > 0 && !floating) {
+        width = coord.width + padding
         if (isHiddenYAxis(index)) {
-          yAxisWidth = yAxisWidth - yLabelCoord.width - padding
+          width = width - coord.width - padding
         }
       } else {
-        yAxisWidth =
-          yAxisWidth + (floating || !w.config.yaxis[index].show ? 0 : 5)
+        width = floating || !w.config.yaxis[index].show ? 0 : 5
       }
+
+      w.config.yaxis[index].opposite
+        ? (yAxisWidthRight = yAxisWidthRight + width)
+        : (yAxisWidthLeft = yAxisWidthLeft + width)
+
+      yAxisWidth = yAxisWidth + width
+    }
+
+    w.globals.yLabelsCoords.map((yLabelCoord, index) => {
+      padForLabelTitle(yLabelCoord, index)
     })
 
     w.globals.yTitleCoords.map((yTitleCoord, index) => {
-      let floating = w.config.yaxis[index].floating
-      padding = parseInt(w.config.yaxis[index].title.style.fontSize)
-      if (yTitleCoord.width > 0 && !floating) {
-        yAxisWidth = yAxisWidth + yTitleCoord.width + padding
-        if (isHiddenYAxis(index)) {
-          yAxisWidth = yAxisWidth - yTitleCoord.width - padding
-        }
-      } else {
-        yAxisWidth =
-          yAxisWidth + (floating || !w.config.yaxis[index].show ? 0 : 5)
-      }
+      padForLabelTitle(yTitleCoord, index)
     })
+
+    if (w.globals.isBarHorizontal) {
+      yAxisWidth =
+        w.globals.yLabelsCoords[0].width + w.globals.yTitleCoords[0].width + 15
+    }
+
+    this.yAxisWidthLeft = yAxisWidthLeft
+    this.yAxisWidthRight = yAxisWidthRight
 
     return yAxisWidth
   }
@@ -458,17 +540,12 @@ export default class Dimensions {
     let w = this.w
     let rect
 
-    this.timescaleLabels = w.globals.timelineLabels.slice()
-    if (w.globals.isBarHorizontal && w.config.xaxis.type === 'datetime') {
-      this.timescaleLabels = w.globals.invertedTimelineLabels.slice()
-    }
+    this.timescaleLabels = w.globals.timescaleLabels.slice()
 
-    let labels = this.timescaleLabels.map((label) => {
-      return label.value
-    })
+    let labels = this.timescaleLabels.map((label) => label.value)
 
     //  get the longest string from the labels array and also apply label formatter to it
-    let val = labels.reduce(function(a, b) {
+    let val = labels.reduce((a, b) => {
       // if undefined, maybe user didn't pass the datetime(x) values
       if (typeof a === 'undefined') {
         console.error(
@@ -506,38 +583,49 @@ export default class Dimensions {
     let xaxisLabels = w.globals.labels.slice()
     let rect
 
-    if (w.globals.timelineLabels.length > 0) {
+    if (w.globals.timescaleLabels.length > 0) {
       const coords = this.getxAxisTimeScaleLabelsCoords()
       rect = {
         width: coords.width,
         height: coords.height
       }
     } else {
-      let lgWidthForSideLegends =
-        w.config.legend.position === 'left' &&
-        w.config.legend.position === 'right' &&
+      this.lgWidthForSideLegends =
+        (w.config.legend.position === 'left' ||
+          w.config.legend.position === 'right') &&
         !w.config.legend.floating
           ? this.lgRect.width
           : 0
 
       // get the longest string from the labels array and also apply label formatter
       let xlbFormatter = w.globals.xLabelFormatter
+      // prevent changing xaxisLabels to avoid issues in multi-yaxes - fix #522
+      let val = Utils.getLargestStringFromArr(xaxisLabels)
+      let valArr = val
 
-      // prevent changing xaxisLabels to avoid issues in multi-yaxies - fix #522
-      let val = xaxisLabels.reduce(function(a, b) {
-        return a.length > b.length ? a : b
-      }, 0)
+      if (w.globals.isMultiLineX) {
+        // if the xaxis labels has multiline texts (array)
+        let maxArrs = xaxisLabels.map((xl, idx) => {
+          return Array.isArray(xl) ? xl.length : 1
+        })
+        let maxArrLen = Math.max(...maxArrs)
+        let maxArrIndex = maxArrs.indexOf(maxArrLen)
+        valArr = xaxisLabels[maxArrIndex]
+      }
 
       // the labels gets changed for bar charts
       if (w.globals.isBarHorizontal) {
-        val = w.globals.yAxisScale[0].result.reduce(function(a, b) {
-          return a.length > b.length ? a : b
-        }, 0)
+        val = w.globals.yAxisScale[0].result.reduce(
+          (a, b) => (a.length > b.length ? a : b),
+          0
+        )
+        valArr = val
       }
 
       let xFormat = new Formatters(this.ctx)
       let timestamp = val
       val = xFormat.xLabelFormat(xlbFormatter, val, timestamp)
+      valArr = xFormat.xLabelFormat(xlbFormatter, valArr, timestamp)
 
       let graphics = new Graphics(this.ctx)
 
@@ -545,28 +633,58 @@ export default class Dimensions {
         val,
         w.config.xaxis.labels.style.fontSize
       )
+      let xArrLabelrect = xLabelrect
+      if (val !== valArr) {
+        xArrLabelrect = graphics.getTextRects(
+          valArr,
+          w.config.xaxis.labels.style.fontSize
+        )
+      }
 
       rect = {
-        width: xLabelrect.width,
-        height: xLabelrect.height
+        width:
+          xLabelrect.width >= xArrLabelrect.width
+            ? xLabelrect.width
+            : xArrLabelrect.width,
+        height:
+          xLabelrect.height >= xArrLabelrect.height
+            ? xLabelrect.height
+            : xArrLabelrect.height
       }
 
       if (
         rect.width * xaxisLabels.length >
-          w.globals.svgWidth - lgWidthForSideLegends - this.yAxisWidth &&
+          w.globals.svgWidth -
+            this.lgWidthForSideLegends -
+            this.yAxisWidth -
+            this.gridPad.left -
+            this.gridPad.right &&
         w.config.xaxis.labels.rotate !== 0
       ) {
         if (!w.globals.isBarHorizontal) {
           w.globals.rotateXLabels = true
-          xLabelrect = graphics.getTextRects(
-            val,
-            w.config.xaxis.labels.style.fontSize,
-            w.config.xaxis.labels.style.fontFamily,
-            `rotate(${w.config.xaxis.labels.rotate} 0 0)`,
-            false
-          )
+          const getRotatedTextRects = (text) => {
+            return graphics.getTextRects(
+              text,
+              w.config.xaxis.labels.style.fontSize,
+              w.config.xaxis.labels.style.fontFamily,
+              `rotate(${w.config.xaxis.labels.rotate} 0 0)`,
+              false
+            )
+          }
+          xLabelrect = getRotatedTextRects(val)
+          if (val !== valArr) {
+            xArrLabelrect = getRotatedTextRects(valArr)
+          }
 
-          rect.height = xLabelrect.height / 1.66
+          rect.height =
+            (xLabelrect.height > xArrLabelrect.height
+              ? xLabelrect.height
+              : xArrLabelrect.height) / 1.5
+          rect.width =
+            xLabelrect.width > xArrLabelrect.width
+              ? xLabelrect.width
+              : xArrLabelrect.width
         }
       } else {
         w.globals.rotateXLabels = false
@@ -613,6 +731,7 @@ export default class Dimensions {
           dataPointIndex: -1,
           w
         })
+        let valArr = val
 
         // if user has specified a custom formatter, and the result is null or empty, we need to discard the formatter and take the value as it is.
         if (typeof val === 'undefined' || val.length === 0) {
@@ -625,19 +744,42 @@ export default class Dimensions {
           let barYaxisLabels = w.globals.labels.slice()
 
           //  get the longest string from the labels array and also apply label formatter to it
-          val = barYaxisLabels.reduce(function(a, b) {
-            return a.length > b.length ? a : b
-          }, 0)
+          val = Utils.getLargestStringFromArr(barYaxisLabels)
 
           val = lbFormatter(val, { seriesIndex: index, dataPointIndex: -1, w })
+          valArr = val
+
+          if (w.globals.isMultiLineX) {
+            // if the xaxis labels has multiline texts (array)
+            let maxArrs = barYaxisLabels.map((xl, idx) => {
+              return Array.isArray(xl) ? xl.length : 1
+            })
+            let maxArrLen = Math.max(...maxArrs)
+            let maxArrIndex = maxArrs.indexOf(maxArrLen)
+            valArr = barYaxisLabels[maxArrIndex]
+          }
         }
 
         let graphics = new Graphics(this.ctx)
         let rect = graphics.getTextRects(val, yaxe.labels.style.fontSize)
+        let arrLabelrect = rect
+
+        if (val !== valArr) {
+          arrLabelrect = graphics.getTextRects(
+            valArr,
+            yaxe.labels.style.fontSize
+          )
+        }
 
         ret.push({
-          width: rect.width + labelPad,
-          height: rect.height
+          width:
+            (arrLabelrect.width > rect.width
+              ? arrLabelrect.width
+              : rect.width) + labelPad,
+          height:
+            arrLabelrect.height > rect.height
+              ? arrLabelrect.height
+              : rect.height
         })
       } else {
         ret.push({
@@ -673,8 +815,8 @@ export default class Dimensions {
     }
 
     return {
-      width: width,
-      height: height
+      width,
+      height
     }
   }
 
@@ -763,6 +905,16 @@ export default class Dimensions {
         y: 0,
         height: 0,
         width: 0
+      }
+    }
+
+    // if legend takes up all of the chart space, we need to restrict it.
+    if (
+      w.config.legend.position === 'left' ||
+      w.config.legend.position === 'right'
+    ) {
+      if (this.lgRect.width * 1.5 > w.globals.svgWidth) {
+        this.lgRect.width = w.globals.svgWidth / 1.5
       }
     }
 

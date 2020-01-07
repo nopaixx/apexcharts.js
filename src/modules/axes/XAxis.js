@@ -13,10 +13,26 @@ export default class XAxis {
     this.w = ctx.w
 
     const w = this.w
+    this.axesUtils = new AxesUtils(ctx)
+
     this.xaxisLabels = w.globals.labels.slice()
-    if (w.globals.timelineLabels.length > 0) {
-      //  timeline labels are there
-      this.xaxisLabels = w.globals.timelineLabels.slice()
+    if (w.globals.timescaleLabels.length > 0 && !w.globals.isBarHorizontal) {
+      //  timeline labels are there and chart is not rangeabr timeline
+      this.xaxisLabels = w.globals.timescaleLabels.slice()
+    }
+    // if (w.config.xaxis.convertedCatToNumeric) {
+    // this.xaxisLabels = []
+    // let min = w.globals.minX - 1
+    // let max = w.globals.maxX
+
+    // for (let i = min; i < max; i++) {
+    //   this.xaxisLabels.push(i + 1)
+    // }
+
+    // this.xaxisLabels = this.axesUtils.getCatLabelsByTickAmount()
+    // }
+    if (w.config.xaxis.tickAmount === 'dataPoints') {
+      this.xaxisLabels = this.axesUtils.getCatLabelsByTickAmount()
     }
 
     this.drawnLabels = []
@@ -27,24 +43,28 @@ export default class XAxis {
       this.offY = w.globals.gridHeight + 1
     }
     this.offY = this.offY + w.config.xaxis.axisBorder.offsetY
+    this.isCategoryBarHorizontal =
+      w.config.chart.type === 'bar' && w.config.plotOptions.bar.horizontal
 
     this.xaxisFontSize = w.config.xaxis.labels.style.fontSize
     this.xaxisFontFamily = w.config.xaxis.labels.style.fontFamily
     this.xaxisForeColors = w.config.xaxis.labels.style.colors
     this.xaxisBorderWidth = w.config.xaxis.axisBorder.width
+    if (this.isCategoryBarHorizontal) {
+      this.xaxisBorderWidth = w.config.yaxis[0].axisBorder.width.toString()
+    }
 
     if (this.xaxisBorderWidth.indexOf('%') > -1) {
       this.xaxisBorderWidth =
-        (w.globals.gridWidth * parseInt(this.xaxisBorderWidth)) / 100
+        (w.globals.gridWidth * parseInt(this.xaxisBorderWidth, 10)) / 100
     } else {
-      this.xaxisBorderWidth = parseInt(this.xaxisBorderWidth)
+      this.xaxisBorderWidth = parseInt(this.xaxisBorderWidth, 10)
     }
     this.xaxisBorderHeight = w.config.xaxis.axisBorder.height
 
     // For bars, we will only consider single y xais,
     // as we are not providing multiple yaxis for bar charts
     this.yaxis = w.config.yaxis[0]
-    this.axesUtils = new AxesUtils(ctx)
   }
 
   drawXaxis() {
@@ -53,16 +73,12 @@ export default class XAxis {
 
     let elXaxis = graphics.group({
       class: 'apexcharts-xaxis',
-      transform: `translate(${w.config.xaxis.offsetX}, ${
-        w.config.xaxis.offsetY
-      })`
+      transform: `translate(${w.config.xaxis.offsetX}, ${w.config.xaxis.offsetY})`
     })
 
     let elXaxisTexts = graphics.group({
       class: 'apexcharts-xaxis-texts-g',
-      transform: `translate(${w.globals.translateXAxisX}, ${
-        w.globals.translateXAxisY
-      })`
+      transform: `translate(${w.globals.translateXAxisX}, ${w.globals.translateXAxisY})`
     })
 
     elXaxis.add(elXaxisTexts)
@@ -93,7 +109,7 @@ export default class XAxis {
 
         let label = this.axesUtils.getLabel(
           labels,
-          w.globals.timelineLabels,
+          w.globals.timescaleLabels,
           x,
           i,
           this.drawnLabels
@@ -105,10 +121,13 @@ export default class XAxis {
         if (w.globals.rotateXLabels) {
           offsetYCorrection = 22
         }
-        let elTick = graphics.drawText({
+
+        label = this.axesUtils.checkForCroppedLabels(i, label, labelsLen)
+
+        let elText = graphics.drawText({
           x: label.x,
           y: this.offY + w.config.xaxis.labels.offsetY + offsetYCorrection,
-          text: '',
+          text: label.text,
           textAnchor: 'middle',
           fontWeight: label.isBold ? 600 : 400,
           fontSize: this.xaxisFontSize,
@@ -116,23 +135,16 @@ export default class XAxis {
           foreColor: Array.isArray(this.xaxisForeColors)
             ? this.xaxisForeColors[i]
             : this.xaxisForeColors,
+          isPlainText: false,
           cssClass:
             'apexcharts-xaxis-label ' + w.config.xaxis.labels.style.cssClass
         })
 
-        if (i === labelsLen - 1) {
-          if (w.globals.skipLastTimelinelabel) {
-            label.text = ''
-          }
-        }
-
-        elXaxisTexts.add(elTick)
-
-        graphics.addTspan(elTick, label.text, this.xaxisFontFamily)
+        elXaxisTexts.add(elText)
 
         let elTooltipTitle = document.createElementNS(w.globals.SVGNS, 'title')
         elTooltipTitle.textContent = label.text
-        elTick.node.appendChild(elTooltipTitle)
+        elText.node.appendChild(elTooltipTitle)
 
         xPos = xPos + colWidth
       }
@@ -147,7 +159,7 @@ export default class XAxis {
         x: w.globals.gridWidth / 2 + w.config.xaxis.title.offsetX,
         y:
           this.offY -
-          parseInt(this.xaxisFontSize) +
+          parseFloat(this.xaxisFontSize) +
           w.globals.xAxisLabelsHeight +
           w.config.xaxis.title.offsetY,
         text: w.config.xaxis.title.text,
@@ -214,8 +226,10 @@ export default class XAxis {
     let yPos
     let labels = []
 
-    for (let i = 0; i < this.xaxisLabels.length; i++) {
-      labels.push(this.xaxisLabels[i])
+    if (w.config.yaxis[realIndex].show) {
+      for (let i = 0; i < this.xaxisLabels.length; i++) {
+        labels.push(this.xaxisLabels[i])
+      }
     }
 
     colHeight = w.globals.gridHeight / labels.length
@@ -245,18 +259,21 @@ export default class XAxis {
             : ylabels.style.colors[i],
           fontSize: ylabels.style.fontSize,
           fontFamily: ylabels.style.fontFamily,
+          isPlainText: false,
           cssClass: 'apexcharts-yaxis-label ' + ylabels.style.cssClass
         })
 
         elYaxisTexts.add(elLabel)
 
+        let elTooltipTitle = document.createElementNS(w.globals.SVGNS, 'title')
+        elTooltipTitle.textContent = label.text
+        elLabel.node.appendChild(elTooltipTitle)
+
         if (w.config.yaxis[realIndex].labels.rotate !== 0) {
           let labelRotatingCenter = graphics.rotateAroundCenter(elLabel.node)
           elLabel.node.setAttribute(
             'transform',
-            `rotate(${w.config.yaxis[realIndex].labels.rotate} ${
-              labelRotatingCenter.x
-            } ${labelRotatingCenter.y})`
+            `rotate(${w.config.yaxis[realIndex].labels.rotate} 0 ${labelRotatingCenter.y})`
           )
         }
         yPos = yPos + colHeight
@@ -287,21 +304,27 @@ export default class XAxis {
       elYaxis.add(elXaxisTitle)
     }
 
-    if (w.config.xaxis.axisBorder.show) {
-      let elHorzLine = graphics.drawLine(
-        w.globals.padHorizontal + w.config.xaxis.axisBorder.offsetX,
-        this.offY,
-        this.xaxisBorderWidth,
-        this.offY,
-        this.yaxis.axisBorder.color,
-        0,
-        this.xaxisBorderHeight
+    let offX = 0
+    if (this.isCategoryBarHorizontal && w.config.yaxis[0].opposite) {
+      offX = w.globals.gridWidth
+    }
+    const axisBorder = w.config.xaxis.axisBorder
+    if (axisBorder.show) {
+      let elVerticalLine = graphics.drawLine(
+        w.globals.padHorizontal + axisBorder.offsetX + offX,
+        1 + axisBorder.offsetY,
+        w.globals.padHorizontal + axisBorder.offsetX + offX,
+        w.globals.gridHeight + axisBorder.offsetY,
+        axisBorder.color,
+        0
       )
 
-      elYaxis.add(elHorzLine)
+      elYaxis.add(elVerticalLine)
+    }
 
+    if (w.config.yaxis[0].axisTicks.show) {
       this.axesUtils.drawYAxisTicks(
-        0,
+        offX,
         labels.length,
         w.config.yaxis[0].axisBorder,
         w.config.yaxis[0].axisTicks,
@@ -318,7 +341,7 @@ export default class XAxis {
     let w = this.w
     let x2 = x1
 
-    if (x1 < 0 || x1 > w.globals.gridWidth) return
+    if (x1 < 0 || x1 - 2 > w.globals.gridWidth) return
 
     let y1 = this.offY + w.config.xaxis.axisTicks.offsetY
     let y2 = y1 + w.config.xaxis.axisTicks.height
@@ -347,7 +370,7 @@ export default class XAxis {
     const xCount = this.xaxisLabels.length
     let x1 = w.globals.padHorizontal
 
-    if (w.globals.timelineLabels.length > 0) {
+    if (w.globals.timescaleLabels.length > 0) {
       for (let i = 0; i < xCount; i++) {
         x1 = this.xaxisLabels[i].position
         xAxisTicksPositions.push(x1)
@@ -382,7 +405,7 @@ export default class XAxis {
       '.apexcharts-yaxis-inversed text'
     )
     let xAxisTextsInversed = w.globals.dom.baseEl.querySelectorAll(
-      '.apexcharts-xaxis-inversed-texts-g text'
+      '.apexcharts-xaxis-inversed-texts-g text tspan'
     )
 
     if (w.globals.rotateXLabels || w.config.xaxis.labels.rotateAlways) {
@@ -393,9 +416,7 @@ export default class XAxis {
 
         xAxisTexts[xat].setAttribute(
           'transform',
-          `rotate(${w.config.xaxis.labels.rotate} ${textRotatingCenter.x} ${
-            textRotatingCenter.y
-          })`
+          `rotate(${w.config.xaxis.labels.rotate} ${textRotatingCenter.x} ${textRotatingCenter.y})`
         )
 
         xAxisTexts[xat].setAttribute('text-anchor', `end`)
@@ -407,21 +428,26 @@ export default class XAxis {
         let tSpan = xAxisTexts[xat].childNodes
 
         if (w.config.xaxis.labels.trim) {
-          graphics.placeTextWithEllipsis(
-            tSpan[0],
-            tSpan[0].textContent,
-            w.config.xaxis.labels.maxHeight - 40
-          )
+          tSpan.forEach((ts) => {
+            graphics.placeTextWithEllipsis(
+              ts,
+              ts.textContent,
+              w.config.xaxis.labels.maxHeight -
+                (w.config.legend.position === 'bottom' ? 20 : 10)
+            )
+          })
         }
       }
     } else {
-      let width = w.globals.gridWidth / w.globals.labels.length
+      let width = w.globals.gridWidth / (w.globals.labels.length + 1)
 
       for (let xat = 0; xat < xAxisTexts.length; xat++) {
         let tSpan = xAxisTexts[xat].childNodes
 
         if (w.config.xaxis.labels.trim && w.config.xaxis.type !== 'datetime') {
-          graphics.placeTextWithEllipsis(tSpan[0], tSpan[0].textContent, width)
+          tSpan.forEach((ts) => {
+            graphics.placeTextWithEllipsis(ts, ts.textContent, width)
+          })
         }
       }
     }
@@ -441,7 +467,10 @@ export default class XAxis {
         )
       }
 
-      if (lastLabelPosX.x + lastLabelPosX.width > w.globals.gridWidth) {
+      if (
+        lastLabelPosX.x + lastLabelPosX.width > w.globals.gridWidth &&
+        !w.globals.isBarHorizontal
+      ) {
         yAxisTextsInversed[0].parentNode.removeChild(yAxisTextsInversed[0])
       }
 
@@ -451,7 +480,7 @@ export default class XAxis {
           xAxisTextsInversed[xat],
           xAxisTextsInversed[xat].textContent,
           w.config.yaxis[0].labels.maxWidth -
-            parseInt(w.config.yaxis[0].title.style.fontSize) * 2 -
+            parseFloat(w.config.yaxis[0].title.style.fontSize) * 2 -
             20
         )
       }
